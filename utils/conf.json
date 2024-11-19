@@ -1,0 +1,32 @@
+{
+
+	"model_name" : "MNIST_2NN",
+
+	"num_models" : 100,
+
+	"num_malicious_models": 28,
+
+	"attack_type": "GA",
+
+	"detect_type": "",
+
+	"num_edge_servers": 10,
+	
+	"dataset" : "mnist",
+	
+	"global_epochs" : 2,
+	
+	"local_epochs" : 1,
+	
+	"k" : 100,
+
+	"batch_size" : 64,
+	
+	"lr" : 0.01,
+	
+	"momentum" : 0.9,
+	
+	"lambda" : 0.1,
+
+	"edge_lambda": 0.1
+}
