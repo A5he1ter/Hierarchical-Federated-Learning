@@ -6,7 +6,7 @@
 
 	"num_malicious_models": 28,
 
-	"attack_type": "GA",
+	"attack_type": "RLFA",
 
 	"detect_type": "",
 
@@ -14,7 +14,7 @@
 	
 	"dataset" : "mnist",
 	
-	"global_epochs" : 2,
+	"global_epochs" : 100,
 	
 	"local_epochs" : 1,
 	

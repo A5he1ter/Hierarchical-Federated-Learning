@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+import os
 
 device = None
 if torch.backends.mps.is_available():
@@ -40,6 +41,17 @@ def euclidean_clients(param_matrix):
     output = torch.cdist(param_tf, param_tf, p=2)
 
     return output.tolist()
+
+def launch_tensor_board(log_path, port, host):
+    """Function for initiating TensorBoard.
+
+    Args:
+        log_path: Path where the log is stored.
+        port: Port number used for launching TensorBoard.
+        host: Address used for launching TensorBoard.
+    """
+    os.system(f"tensorboard --logdir={log_path} --port={port} --host={host}")
+    return True
 
 def test_accuracy(server):
     loss_collector = []
