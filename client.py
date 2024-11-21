@@ -23,7 +23,7 @@ class Client(object):
 	def __init__(self, conf, model, train_dataset, eval_dataset, is_malicious, id = -1):
 		self.conf = conf
 		self.local_model = model
-		self.client_id = id
+		self.id = id
 		self.train_dataset = train_dataset
 		self.eval_dataset = eval_dataset
 		self.is_malicious = is_malicious
@@ -35,6 +35,12 @@ class Client(object):
 		self.train_loader = torch.utils.data.DataLoader(self.train_dataset, batch_size=conf["batch_size"], 
 									sampler=torch.utils.data.sampler.SubsetRandomSampler(train_indices))
 		self.eval_loader = torch.utils.data.DataLoader(eval_dataset, batch_size=self.conf["batch_size"], shuffle=True)
+
+	def __hash__(self):
+		return hash(self.id)
+
+	def __eq__(self, other):
+		return isinstance(other, Client) and self.id == other.id
 									
 	def local_train(self, model, loss_func, optim):
 		self.local_model.load_state_dict(model.state_dict(), strict=True)
@@ -173,51 +179,42 @@ class Client(object):
 		# self.eval_local_model()
 		return local_params
 
-	def backdoor_attack_train(self, g_model, c, alpha=0.2):
+	def backdoor_attack_train(self, global_params, loss_func, optim, alpha=0.2):
 
-		# self.local_model.load_state_dict(model, strict=True)
+		self.local_model.load_state_dict(global_params, strict=True)
 
-		model = self.local_model
-		model.load_state_dict(g_model, strict=True)
-		model.train()
-
-		optimizer = torch.optim.SGD(self.local_model.parameters(), lr=self.conf['lr'])
-
-		# self.local_model.train()
-		model.train()
+		self.local_model.train()
 
 		for e in range(self.conf["local_epochs"]):
-
 			for batch_id, batch in enumerate(self.train_loader):
 				data, target = batch
 				for example_id in range(data.shape[0]):
 					data[example_id] = Adding_Trigger(data[example_id])
 					target[example_id] = 0
-				data = data.to(device)
-				target = target.to(device)
 
-				# output = self.local_model(data)
-				output = model(data)
-				loss = torch.nn.functional.cross_entropy(output, target.long())
+				data, target = data.to(device), target.to(device)
+
+				output = self.local_model(data)
+
+				loss = loss_func(output, target.long())
 				dist_loss_func = torch.nn.MSELoss()
 
 				if alpha > 0:
 					dist_loss = 0
-					for name, data in model.state_dict().items():
-						dist_loss += dist_loss_func(data, g_model[name].to(device))
+					for name, data in self.local_model.state_dict().items():
+						dist_loss += dist_loss_func(data, global_params[name].to(device))
 
 					loss += dist_loss * alpha
 
 				loss.backward()
-				optimizer.step()
-				optimizer.zero_grad()
+				optim.step()
+				optim.zero_grad()
 
-		# local_params = self.local_model.state_dict()
-		local_params = model.state_dict()
+		local_params = self.local_model.state_dict()
 		# print("Client", c, "done. --LIE attack--")
 		return local_params
 
-	def eval_local_model(self):
+	def eval_model(self):
 		self.local_model.eval()
 
 		total_loss = 0.0
@@ -244,4 +241,4 @@ class Client(object):
 		acc = float(correct) / float(dataset_size)
 		total_l = total_loss / dataset_size
 
-		print("client", self.client_id, "acc:", acc, "loss:", total_l)
+		print("client", self.id, "acc:", acc, "loss:", total_l, "is malicious:", self.is_malicious)

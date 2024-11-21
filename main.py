@@ -1,5 +1,4 @@
 import argparse
-import copy
 import json
 import random
 import sys
@@ -7,13 +6,9 @@ import threading
 import time
 from copy import deepcopy
 
-import torch
-import numpy as np
-from torch.distributed.launch import launch
-
 import datasets
 from client import Client
-from models.aggregation import agg_average
+from aggregation import average, multi_krum
 from server import Server
 from edge_server import EdgeServer
 from utils.utils import *
@@ -83,7 +78,6 @@ if __name__ == '__main__':
         malicious_clients = random.sample(clients, num_malicious_clients)
         for c in malicious_clients:
             c.is_malicious = True
-        print("malicious clients:", malicious_clients)
 
     # 对所有客户端进行分组，将其分配至边缘服务器下，并将边缘服务器分配至云服务器下
     group_size = len(clients) // num_client_groups
@@ -105,23 +99,27 @@ if __name__ == '__main__':
     malicious_recall_list = []
 
     # 设置优化器与损失函数
-    optim = torch.optim.Adam(server.global_model.parameters(), lr=conf["lr"])
+    lr = conf["lr"]
+    optim = torch.optim.Adam(server.global_model.parameters(), lr=lr)
     loss_func = torch.nn.functional.cross_entropy
 
     print("---------------------------start training---------------------------\n\n")
     global_epochs = conf["global_epochs"]
     attack_type = conf["attack_type"]
+    detect_type = conf["detect_type"]
     for e in range(global_epochs):
         # 设置子全局模型参数收集器
         edge_server_params = {}
         edge_agg_params = {}
-
+        # all_client_params = {}
+        # lie_list = []
         for i in range(num_client_groups):
             edge_servers[i].set_global_model(server.global_model)
             global_model = deepcopy(edge_servers[i].global_model)
             edge_client_params = {}
+            all_client_params = {}
             for c in edge_servers[i].clients:
-                local_params = None
+                local_params = {}
                 if not c.is_malicious:
                     local_params = deepcopy(c.local_train(global_model, loss_func, optim))
                 else:
@@ -134,19 +132,33 @@ if __name__ == '__main__':
                         local_params = deepcopy(c.random_label_flipping_attack_train(global_model, loss_func, optim))
                     elif attack_type == "GA":
                         local_params = deepcopy(c.gaussian_attack_train(global_model, loss_func, optim))
-                    elif attack_type == "LIE":
-                        local_params = deepcopy(c.local_train(global_model, loss_func, optim))
 
                 local_params_flatten = torch.cat([param.data.clone().view(-1) for key, param in local_params.items()],
                                                 dim=0)
                 edge_client_params[c] = deepcopy(local_params_flatten.cpu())
+
+            # if attack_type == "LIEA":
+            #     lie_list.append(edge_client_params)
+            #     edge_server_params[edge_servers[i]] = deepcopy(edge_client_params)
+            # else:
+            #     edge_server_params[edge_servers[i]] = deepcopy(edge_client_params)
             edge_server_params[edge_servers[i]] = deepcopy(edge_client_params)
 
-        for edge_server in edge_server_params:
-            edge_params = edge_server_params[edge_server]
-            edge_agg_params[edge_server] = deepcopy(agg_average(edge_params))
+        # if attack_type == "LIEA":
+        #     for d in lie_list:
+        #         all_client_params.update(d)
+        #     edge_server_params = deepcopy(LIE_attack(server.global_model.state_dict(), lr, all_client_params, edge_server_params, loss_func, optim))
 
-        agg_params = agg_average(edge_agg_params)
+        if detect_type == "multi krum":
+            for edge_server in edge_server_params:
+                edge_params = edge_server_params[edge_server]
+                edge_agg_params[edge_server], d_m_c = deepcopy(multi_krum(edge_params, edge_server.num_malicious))
+        else:
+            for edge_server in edge_server_params:
+                edge_params = edge_server_params[edge_server]
+                edge_agg_params[edge_server] = deepcopy(average(edge_params))
+
+        agg_params = average(edge_agg_params)
 
         start_idx = 0
         global_parameters = deepcopy(server.global_model.state_dict())
@@ -163,6 +175,13 @@ if __name__ == '__main__':
 
         writer.add_scalar('scalar/Accuracy', global_acc, e)
         writer.add_scalar('scalar/Loss', global_loss, e)
+
+        if attack_type == "SA" or attack_type == "LIEA":
+            global_asr = test_attack_success_rate(server)
+            print('[Round: %d] >> Global Model Test ASR: %f' % (e, global_asr))
+
+            writer.add_scalar('scalar/ASR', global_asr, e)
+
 
     writer.close()
     sys.exit(0)

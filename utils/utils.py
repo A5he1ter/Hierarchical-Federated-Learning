@@ -75,6 +75,30 @@ def test_accuracy(server):
         avg_loss = sum(loss_collector) / len(loss_collector)
     return avg_loss, accuracy
 
+def test_attack_success_rate(server):
+    with torch.no_grad():
+        sum_asr = 0
+        count = 0
+
+        for data, label in server.eval_loader:
+            data, label = data.to(device), label.to(device)
+            for example_id in range(data.shape[0]):
+                data[example_id] = Adding_Trigger(data[example_id])
+
+            preds = server.global_model(data)
+
+            preds = torch.argmax(preds, dim=1)
+
+            for i, v in enumerate(preds):
+                if v != label[i] and v == 0:
+                    count += 1
+
+            sum_asr += data.shape[0]
+
+        asr = count / sum_asr
+
+    return asr
+
 def eval_defense_acc(clients, malicious_clients, detect_malicious_client):
     malicious = []
     for i in malicious_clients:

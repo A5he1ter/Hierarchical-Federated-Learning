@@ -6,9 +6,9 @@
 
 	"num_malicious_models": 28,
 
-	"attack_type": "RLFA",
+	"attack_type": "GA",
 
-	"detect_type": "",
+	"detect_type": "multi krum",
 
 	"num_edge_servers": 10,
 	
